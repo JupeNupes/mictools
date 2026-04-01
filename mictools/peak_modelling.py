@@ -54,136 +54,6 @@ def fit_scan(scanno, xcol, ycol, normcol=None, visualize = False,
     
     return output
 
-# def graph_run(scans, xcol, ycol, zcol=None, normcol=None):
-        
-#     # if type(ycol) == dict:
-#     #     ycolName = 'Intensity'
-#     # else:
-#     #     ycolName = ycol
-    
-#     dataFrames = []
-    
-#     for scanno in scans:
-        
-#         xdata, ydata, output = fit_scan(scanno, xcol=xcol, ycol=ycol,
-#                                                 normcol=normcol, getData=True)
-        
-#         baseline = load_scan(scanno, stream_name="baseline")
-#         zval= baseline[zcol].mean()
-#         zdata = zval*np.ones(len(ydata))
-#         frame = pd.DataFrame(data={xcol: xdata, ycol: ydata, zcol:zdata}) 
-#         dataFrames.append(frame)
-        
-        
-#     dataFrame = pd.concat(dataFrames)
-    
-#     plasmaColors = pc.sample_colorscale(pc.sequential.Plasma,
-#                             [n/(len(scans)-1) for n in range(len(scans))])
-    
-#     fig = px.line(dataFrame,x=xcol, y=ycol, color=zcol, markers=True,
-#             color_discrete_sequence = plasmaColors)
-        
-    
-#     fig.show()
-
-# def analyze_run(scans, xcol, ycol, zcol, normcol=None, 
-#                    paramsFrame=False):
-        
-#         # if type(ycol) == dict:
-#         #     ycolName = 'Intensity'
-#         # else:
-#         #     ycolName = ycol
-        
-#         dataFrames = []
-#         fitFrames = []
-#         paramFrame = pd.DataFrame()
-#         model = lmfit.models.PseudoVoigtModel() + lmfit.models.LinearModel()
-        
-#         for scanno in scans:
-            
-#             xdata, ydata, output = fit_scan(scanno, xcol=xcol, ycol=ycol,
-#                                                   normcol=normcol, getData=True)
-            
-
-#             baseline = load_scan(scanno, stream_name="baseline")
-#             zval= baseline[zcol].mean()
-#             zdata = zval*np.ones(len(ydata))
-#             frame = pd.DataFrame(data={xcol: xdata, ycol: ydata, zcol:zdata}) 
-#             dataFrames.append(frame)
-            
-#             xdatanew = np.linspace(xdata[0], xdata[-1], len(xdata)*10)
-#             ydatanew = model.eval(params=output.params, x=xdatanew)
-#             zdatanew = zval*np.ones(len(ydatanew))
-#             frameFit = pd.DataFrame(data={xcol: xdatanew, ycol + ' fit': ydatanew, 
-#                                           zcol:zdatanew}) 
-#             fitFrames.append(frameFit)
-            
-#             paramFrame.loc[scanno, zcol] = zval
-#             for param in output.params:
-#                 paramFrame.loc[scanno, param] = output.params[param].value
-                
-                
-#         if paramsFrame:
-#             return paramFrame
-        
-#         #Left panel with raw data and fit graph
-            
-#         dataFrame = pd.concat(dataFrames)
-#         fitFrame = pd.concat(fitFrames)
-        
-#         plasmaColors = pc.sample_colorscale(pc.sequential.Plasma,
-#                                 [n/(len(scans)-1) for n in range(len(scans))])
-        
-#         fig = px.line(dataFrame,x=xcol, y=ycol, color=zcol, markers=True,
-#                 color_discrete_sequence = plasmaColors)
-#         for data in fig.data:
-#             data.mode = 'markers'
-            
-#         fig2 = px.line(fitFrame,x=xcol, y=ycol+' fit', color=zcol, 
-#                 color_discrete_sequence = plasmaColors)
-        
-        
-#         for i, data in enumerate(fig2.data):
-#             fig.add_trace(data)
-        
-        
-#         Fig = go.FigureWidget(data=fig)
-        
-        
-#         Fig.update_layout(width=600, height=600)
-        
-        
-#         #Right panel with widget and z dependence
-        
-#         textbox = widgets.Dropdown(
-#         description='Fit param.: ',
-#         value='center',
-#         options=[i for i in paramFrame.columns.to_list() if i not in [zcol]]
-#         )
-        
-#         trace = px.line(paramFrame, x=zcol, y='center', markers=True)
-#         trace.data[0].line.color = 'green'
-#         g = go.FigureWidget(data=trace)
-        
-#         g.update_layout(width=400, height=500)
-        
-#         def response(change):
-            
-#             paramYCol = textbox.value
-#             with g.batch_update():
-#                 g.data[0].y = paramFrame[paramYCol]
-#                 g.layout.yaxis.title = paramYCol
-                
-#         textbox.observe(response, names='value')
-        
-#         container = widgets.VBox([textbox, g], 
-#                                  layout = Layout(margin='60px 0 0 0'))
-        
-#         container2 = widgets.HBox([Fig, container])
-        
-        
-#         return container2
-
 def graph_run(scans, xcol, ycol, zcol='Scan', normcol=None):
         
     # if type(ycol) == dict:
@@ -201,7 +71,7 @@ def graph_run(scans, xcol, ycol, zcol='Scan', normcol=None):
         if  zcol=='Scan':
             zval = scanno
         else:
-            baseline = load_scan(scanno, stream_name="baseline")
+            baseline = load_scan(scanno, stream="baseline")
             zval= baseline[zcol].mean()
         zdata = zval*np.ones(len(ydata))
         frame = pd.DataFrame(data={xcol: xdata, ycol: ydata, zcol:zdata})
@@ -241,11 +111,11 @@ def analyze_run(scans, xcol, ycol, zcol='Scan', normcol=None,
                                                   normcol=normcol, getData=True)
             
 
-            baseline = load_scan(scanno, stream_name="baseline")
+            baseline = load_scan(scanno, stream="baseline")
             if zcol=='Scan':
                 zval = scanno
             else:
-                baseline = load_scan(scanno, stream_name="baseline")
+                baseline = load_scan(scanno, stream="baseline")
                 zval= baseline[zcol].mean()
             zdata = zval*np.ones(len(ydata))
             frame = pd.DataFrame(data={xcol: xdata, ycol: ydata, zcol:zdata}) 

@@ -13,7 +13,9 @@ from .load_data import load_scan
 from .config import get_path
 from .roi_utils import Roi as ROI
 
-def process_single_file(file, roi):
+
+
+def process_roi_file(file, roi):
     '''
     Process a single HDF5 file and extract ROI data.
     
@@ -56,12 +58,46 @@ def process_single_file(file, roi):
         'times': times
     }
 
-def process_roi_data(scanno, detector, roi, path=None, n_workers=None):
+def process_tetramm_file(file, ch: int):
     '''
-    Loads processed data from a region of interest (ROI) in 
-    flyscan HDF5 files using parallel processing. Returns an Nx4 array 
-    where the first column is timestamps, and the following columns are 
-    intensity in ROI, COM y-position, and COM x-position.
+    Process a single Tetramm HDF5 file and extract channel current.
+    
+    Parameters:
+    - file: Path to HDF5 file (str)
+    - ch: Channel number (int) 
+    
+    Returns:
+    - Dictionary containing intensity, COM positions, and timestamps
+    '''
+
+    if not isinstance(ch, int) or ch < 0 or ch > 3:
+        raise ValueError("Channel number must be an integer between 0 and 4.")
+    
+    with File(file, "r") as f:
+        dset = f["entry/data/data"]
+        data = dset[:, 0, ch-1]
+    
+    return {
+        f'Current {ch}': data,
+    }
+
+
+
+
+
+def process_detector_data(scanno, 
+                     detector, 
+                     roi=None, 
+                     ch=None, 
+                     path=None, 
+                     n_workers=None):
+    '''
+    Loads processed data from a region of interest (ROI) or Tetramm current
+    data in flyscan HDF5 files using parallel processing. 
+    For ROI mode, it returns an Nx4 array where the first column is 
+    timestamps, and the following columns are intensity in ROI, 
+    COM y-position, and COM x-position.
+    For Tetramm mode, it returns an Nx1 array with the tetramm current data.
     
     Parameters:
     - scanno: Scan number (int)
@@ -74,14 +110,12 @@ def process_roi_data(scanno, detector, roi, path=None, n_workers=None):
     '''
 
     path = get_path(path)
-
-    # Check if roi is an instance of roi class
-    if not isinstance(roi, ROI):
-        raise ValueError("roi must be an instance of roi class from roi_utils.py" \
-        "defined from roi_utils.py as roiN = roi(y_start, y_end, x_start, x_end, name=\"roiN\")")
     
     # Check if processed data already exists
-    processed_path = path + f'/Processed/{detector}/Scan_{scanno:04d}_{roi.name}.csv'
+    if roi is not None:
+        processed_path = path + f'/Processed/{detector}/Scan_{scanno:04d}_{roi.name}.csv'
+    elif ch is not None:
+        processed_path = path + f'/Processed/{detector}/Scan_{scanno:04d}_channel_{ch}.csv'
     if os.path.exists(processed_path):
         df = pd.read_csv(processed_path)
         return df
@@ -93,31 +127,52 @@ def process_roi_data(scanno, detector, roi, path=None, n_workers=None):
     # Determine number of workers
     if n_workers is None:
         n_workers = max(1, cpu_count() - 1)
-    
-    # Create partial function with fixed roi parameter
-    process_func = partial(process_single_file, roi=roi)
-    
-    # Process files in parallel
-    with Pool(processes=n_workers) as pool:
-        results = pool.map(process_func, files)
-    
-    # Concatenate results
-    intensity = np.concatenate([r['intensity'] for r in results], axis=0)
-    com_y = np.concatenate([r['com_y'] for r in results], axis=0)
-    com_x = np.concatenate([r['com_x'] for r in results], axis=0)
-    times = np.concatenate([r['times'] for r in results], axis=0)
-    
-    data_array = np.concatenate([
-        times[:, np.newaxis], 
-        intensity[:, np.newaxis],
-        com_y[:, np.newaxis], 
-        com_x[:, np.newaxis]
-    ], axis=1)
 
-    df = pd.DataFrame(data_array, columns=['Timestamp', 
-                                           'Intensity', 
-                                           'COM_Y', 
-                                           'COM_X'])
+    if roi is not None:
+
+        # Check if roi is an instance of roi class
+        if not isinstance(roi, ROI):
+            raise ValueError("roi must be an instance of roi class from roi_utils.py" \
+            "defined from roi_utils.py as roiN = roi(y_start, y_end, x_start, x_end, name=\"roiN\")")
+    
+        # Create partial function with fixed roi parameter
+        process_func = partial(process_roi_file, roi=roi)
+        
+        # Process files in parallel
+        with Pool(processes=n_workers) as pool:
+            results = pool.map(process_func, files)
+        
+        # Concatenate results
+        intensity = np.concatenate([r['intensity'] for r in results], axis=0)
+        com_y = np.concatenate([r['com_y'] for r in results], axis=0)
+        com_x = np.concatenate([r['com_x'] for r in results], axis=0)
+        times = np.concatenate([r['times'] for r in results], axis=0)
+        
+        data_array = np.concatenate([
+            times[:, np.newaxis], 
+            intensity[:, np.newaxis],
+            com_y[:, np.newaxis], 
+            com_x[:, np.newaxis]
+        ], axis=1)
+
+        df = pd.DataFrame(data_array, columns=['Timestamp', 
+                                            'Intensity', 
+                                            'COM_Y', 
+                                            'COM_X'])
+        
+    elif ch is not None:
+
+        # Create partial function with fixed channel parameter
+        process_func = partial(process_tetramm_file, ch=ch)
+        
+        # Process files in parallel
+        with Pool(processes=n_workers) as pool:
+            results = pool.map(process_func, files)
+        
+        # Concatenate results
+        current_data = np.concatenate([r[f'Current {ch}'] for r in results], axis=0)
+        
+        df = pd.DataFrame(current_data, columns=[f'Current {ch}'])
 
     # Ensure processed directory exists
     save_dir = os.path.dirname(processed_path)
@@ -132,7 +187,7 @@ def process_roi_data(scanno, detector, roi, path=None, n_workers=None):
 
 def process_position_data(scanno, 
                           path=None, 
-                          processing_method='basic', 
+                          processing_method='averaging', 
                           th=None, 
                           replace=False):
     '''
@@ -165,6 +220,20 @@ def process_position_data(scanno,
     if processing_method == 'basic':
         x_pos = avg_interf['I15 (X)'].values/np.cos(-1*np.radians(th))
         y_pos = avg_interf['I7 (Y ds)'].values
+    elif processing_method == 'averaging':
+        avg_interf = avg_interf - avg_interf.iloc[0]  # subtract the first point to set it as origin
+        x1 = avg_interf['I15 (X)'].values
+        x2 = avg_interf['I10 (X-us)'].values
+        x3 = avg_interf['I11 (X-ds)'].values
+        y1 = avg_interf['I7 (Y ds)'].values
+        y2 = avg_interf['I8 (Y us-ob)'].values
+        y3 = avg_interf['I9 (Y us-ib)'].values
+        z = avg_interf['I12 (Z)'].values
+        x_avg = (x1 + x2 + x3) / 3 
+        y_avg = (y1 + y2 + y3) / 3
+        x_pos = -np.sqrt(x_avg**2 + z**2)
+        y_pos = y_avg
+
 
     # x_pos /= 1e4  # convert to microns
     # y_pos /= 1e4  # convert to microns
@@ -175,30 +244,36 @@ def process_position_data(scanno,
                        'X_Position': x_pos_um,
                        'Y_Position': y_pos_um})
     
+    df['X_Position'] = -1 * (df['X_Position'] - df['X_Position'].iloc[0])
+    df['Y_Position'] = df['Y_Position'] - df['Y_Position'].iloc[0]
+    
     # Ensure processed directory exists
     processed_path = path + f'/Processed/SOCKETSERVER'
     # print(processed_path)
     # save_dir = os.path.dirname(processed_path)
     os.makedirs(processed_path, exist_ok=True)
     
-    df.to_csv(path + f'/Processed/SOCKETSERVER/scan_{scanno}_position.csv', 
+    df.to_csv(path + f'/Processed/SOCKETSERVER/Scan_{scanno:04d}_position.csv', 
               index=False)
     
     return df
 
-def mesh_roi_data(scanno, detector, roi, roi_type="Intensity", th=None, path=None):
+def mesh_detector_data(scanno, detector, roi=None, roi_type="Intensity", ch=None, th=None, path=None):
     # Load the data
     path = get_path(path)
     if th is None:
         baseline_data = load_scan(scanno, stream='baseline', path=path)
         th = baseline_data['sample_theta'].mean()
     position_data = process_position_data(scanno, th=th, path=path)
-    detector_data = process_roi_data(scanno, detector, roi, path=path)
+    detector_data = process_detector_data(scanno, detector, roi=roi, ch=ch, path=path)
 
     # Align lengths
     min_len = min(len(detector_data), len(position_data))
     position_data = position_data[:min_len]
-    detector_data = detector_data[roi_type][:min_len]
+    if roi is not None:
+        detector_data = detector_data[roi_type][:min_len]
+    elif ch is not None:
+        detector_data = detector_data[f'Current {ch}'][:min_len]
 
     scan_info = get_scan_info(scanno, detector, path)
     ny, nx = scan_info['shape']
