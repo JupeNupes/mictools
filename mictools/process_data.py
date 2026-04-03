@@ -3,6 +3,7 @@ import pandas as pd
 from h5py import File
 from multiprocessing import Pool, cpu_count
 from scipy.interpolate import griddata
+from .interp_utils import griddata_with_provenance
 from functools import partial
 import os
 
@@ -285,8 +286,15 @@ def mesh_detector_data(scanno, detector, roi=None, roi_type="Intensity", ch=None
     # Interpolate onto grid
     pts = position_data[['X_Position', 'Y_Position']].values
     data_pts = detector_data.values
-    Z_linear = griddata(pts, data_pts, (X, Y), method='linear')    # smooth, NaN outside convex hull
-    Z_nearest = griddata(pts, data_pts, (X, Y), method='nearest')  # fills everywhere
+
+    #Original calls to griddata --> Commented out by Scott Smith
+    # Z_linear = griddata(pts, data_pts, (X, Y), method='linear')    # smooth, NaN outside convex hull
+    # Z_nearest = griddata(pts, data_pts, (X, Y), method='nearest')  # fills everywhere
+    
+    #Calls to griddata_with_provenance --> Added by Scott Smith
+    # This function returns the interpolated data as well as the provenance (ie the original indices and weights) of the output interpolation
+    Z_linear, prov_lin_idx, prov_lin_wts    = griddata_with_provenance(pts, data_pts, (X, Y), method='linear',  return_provenance=True)
+    Z_nearest, prov_near_idx, prov_near_wts = griddata_with_provenance(pts, data_pts, (X, Y), method='nearest', return_provenance=True)
 
     # Fill gaps outside convex hull using nearest neighbor
     Z = np.where(np.isnan(Z_linear), Z_nearest, Z_linear)
